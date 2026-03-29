@@ -1,0 +1,191 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>PT.Calibration 软件概要设计说明</title>
+<style>
+body { font-family: 'Microsoft YaHei UI'; font-size: 11pt; color: #1f2937; line-height: 1.65; margin: 1.6cm 1.8cm; }
+h1 { font-size: 28pt; text-align: center; margin: 0; }
+h2 { font-size: 18pt; color: #0f172a; margin-top: 22pt; border-bottom: 2px solid #cbd5e1; padding-bottom: 6px; }
+h3 { font-size: 14pt; color: #0f172a; margin-top: 16pt; }
+p { margin: 6pt 0; }
+ul { margin: 4pt 0 10pt 20pt; }
+li { margin: 2pt 0; }
+table { width: 100%; border-collapse: collapse; margin: 10pt 0 16pt 0; font-size: 10.5pt; }
+th, td { border: 1px solid #94a3b8; padding: 6px 8px; vertical-align: top; }
+th { background: #e2e8f0; }
+.cover { text-align: center; margin-top: 180pt; }
+.cover-subtitle { margin-top: 16pt; font-size: 14pt; color: #475569; }
+.cover-meta { margin-top: 70pt; font-size: 12pt; line-height: 2; }
+.toc { margin-top: 40pt; }
+.figure { text-align: center; margin: 12pt 0 20pt 0; }
+.figure img { width: 95%; max-width: 17cm; border: 1px solid #cbd5e1; }
+.caption { font-size: 10pt; color: #475569; margin-top: 6pt; }
+.note { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 8pt 10pt; margin: 10pt 0; }
+.risk { background: #fff7ed; border-left: 4px solid #f59e0b; padding: 8pt 10pt; margin: 10pt 0; }
+.break { page-break-after: always; }
+code { font-family: Consolas, monospace; font-size: 10pt; background: #f1f5f9; padding: 0 3px; }
+</style>
+</head>
+<body>
+<div class="cover">
+    <h1>PT.Calibration 软件概要设计说明</h1>
+    <div class="cover-subtitle">适用于 .NET 8 / WPF / 单机工位版压力开关自动化标定软件</div>
+    <div class="cover-meta">
+        <div>项目名称：PT.Calibration</div>
+        <div>解决方案：PT.Calibration.sln</div>
+        <div>版本：V1.0</div>
+        <div>日期：2026-03-29</div>
+    </div>
+</div>
+<div class="break"></div>
+<h2>目录</h2>
+<div class="toc">
+<p>1 引言</p><p>2 系统概述</p><p>3 总体架构设计</p><p>4 功能模块设计</p><p>5 数据与报表总体设计</p><p>6 部署与运行环境设计</p><p>7 安全、权限与审计设计</p><p>8 非功能设计</p><p>9 风险与分阶段实施建议</p>
+</div>
+<div class="break"></div>
+<h2>1 引言</h2>
+<h3>1.1 编写目的</h3>
+<p>本文档用于说明 <code>PT.Calibration</code> 软件的总体设计方案，统一产品边界、系统分层、主要功能模块、数据存储方式以及部署与安全策略，为后续详细设计、开发实施和评审验收提供基线。</p>
+<h3>1.2 适用范围</h3>
+<p>本说明书适用于基于压力控制器、万用表、高低温试验箱、电气切换矩阵和 DUT 参数下发通道组成的自动化标定系统。首版定位为单机工位、一次服务 1 个 DUT 的量产工位型客户端。</p>
+<h3>1.3 术语与缩略语</h3>
+<table>
+<tr><th>术语</th><th>说明</th></tr>
+<tr><td>DUT</td><td>待测压力开关 Device Under Test。</td></tr>
+<tr><td>Recipe</td><td>按料号管理的测试配方，承载压力、采样、温度、容差和通道映射配置。</td></tr>
+<tr><td>TestRun</td><td>一次完整标定与验证任务，关联 SN、配方、结果和报表。</td></tr>
+<tr><td>FS</td><td>Full Scale，满量程。</td></tr>
+<tr><td>R²</td><td>拟合优度，用于判定最小二乘拟合是否合格。</td></tr>
+</table>
+<h3>1.4 参考资料</h3>
+<table>
+<tr><th>编号</th><th>资料名称</th><th>用途</th></tr>
+<tr><td>R1</td><td>《压力开关产品自动化标定与测试方案》</td><td>业务流程、设备组成、参数与异常处理依据。</td></tr>
+<tr><td>R2</td><td>《最小二乘法计算方案及系数说明》</td><td>拟合算法、系数意义和 R² 判定依据。</td></tr>
+<tr><td>R3</td><td>.NET 8 / WPF / SQLite 资料</td><td>技术路线依据。</td></tr>
+</table>
+<h2>2 系统概述</h2>
+<h3>2.1 建设目标</h3>
+<p>软件目标是替代人工完成压力设定、温箱控制、实时采样、数据处理、拟合、参数下发和二次验证，形成完整“标定-验证”闭环，并保留全过程可追溯记录。</p>
+<ul>
+<li>将压力控制、采集、拟合和参数下发统一纳入可配置流程。</li>
+<li>按料号维护配方，降低不同产品切换的维护成本。</li>
+<li>通过本地账号、角色和审计机制保障量产工位权限边界。</li>
+<li>首版即支持 Excel 测试记录和 Word 测试报告导出。</li>
+</ul>
+<h3>2.2 产品定位</h3>
+<table>
+<tr><th>维度</th><th>定位</th></tr>
+<tr><td>部署形态</td><td>单机工位版，本地保存数据，后续预留联网扩展点。</td></tr>
+<tr><td>运行对象</td><td>一次运行 1 个 DUT，围绕当前 SN 展开流程。</td></tr>
+<tr><td>界面形态</td><td>量产工位型，突出“选配方、录 SN、启动测试、看结果”。</td></tr>
+<tr><td>数据策略</td><td>SQLite 本地库存储结构化数据，文件系统保存日志、模板和报表。</td></tr>
+<tr><td>联调策略</td><td>首版内置模拟器，真实设备通过抽象适配层逐步接入。</td></tr>
+<tr><td>账号策略</td><td>本地完整账号体系，至少包含 Operator、Engineer、Admin。</td></tr>
+</table>
+<h3>2.3 设计原则</h3>
+<ul>
+<li>流程闭环：任何标定任务都必须完成首轮采集、拟合、参数下发和二轮验证。</li>
+<li>可配置：等待时间、采样频率、温度点、压力步长、容差均来自配方。</li>
+<li>可替换：真实驱动、模拟器、报表模板、拟合策略通过接口隔离。</li>
+<li>可追溯：原始采样、处理结果、拟合结果、异常事件和导出报表形成完整追踪链。</li>
+</ul>
+<h2>3 总体架构设计</h2>
+<h3>3.1 软件分层架构</h3>
+<p>系统按“表现层、应用层、领域层、基础设施层”进行分层。WPF 负责界面与交互；应用层负责流程编排；领域层负责核心实体、状态和规则；基础设施层负责数据库、报表、日志和设备适配。</p>
+<div class="figure"><img src="diagrams/overview_architecture.png" /><div class="caption">图 3-1 软件分层架构图</div></div>
+<h3>3.2 分层职责说明</h3>
+<table>
+<tr><th>层次</th><th>职责</th><th>不负责内容</th></tr>
+<tr><td>表现层</td><td>页面呈现、导航、输入校验、命令绑定、实时展示。</td><td>不直接访问数据库、不直接拼接设备协议。</td></tr>
+<tr><td>应用层</td><td>编排测试流程、协调设备与算法、执行业务权限。</td><td>不实现硬件驱动细节。</td></tr>
+<tr><td>领域层</td><td>定义实体、状态机、接口契约、业务规则、异常。</td><td>不依赖 UI 框架和数据库实现。</td></tr>
+<tr><td>基础设施层</td><td>落实 SQLite、日志、报表导出、设备驱动、密码哈希、模拟器。</td><td>不决定业务判定规则和页面布局。</td></tr>
+</table>
+<h3>3.3 模块关系</h3>
+<p>工位主界面是操作入口，测试流程由流程引擎驱动。配方服务、设备配置、数据处理、报表中心、权限审计和历史查询通过统一服务接口协同。</p>
+<div class="figure"><img src="diagrams/overview_module.png" /><div class="caption">图 3-2 模块关系图</div></div>
+<h3>3.4 关键技术选型</h3>
+<table>
+<tr><th>技术项</th><th>选型</th><th>理由</th></tr>
+<tr><td>桌面框架</td><td>WPF + MVVM</td><td>适合设备工位场景，数据绑定成熟，界面状态表达清晰。</td></tr>
+<tr><td>运行平台</td><td>.NET 8</td><td>长期支持版本，Windows Desktop Runtime 完整。</td></tr>
+<tr><td>存储</td><td>SQLite + EF Core 8</td><td>单机部署轻量，迁移成本低，适合本地工位长期运行。</td></tr>
+<tr><td>日志</td><td>Serilog</td><td>便于分流应用、设备、告警和审计日志。</td></tr>
+<tr><td>报表</td><td>ClosedXML + Open XML SDK</td><td>可脱离 Office 生成 Excel 和 Word。</td></tr>
+</table>
+<h2>4 功能模块设计</h2>
+<h3>4.1 业务闭环流程</h3>
+<p>业务主流程严格遵循“配方选择 → 设备自检 → 首轮采集 → 数据处理与拟合 → 参数下发 → 二轮验证 → 判定归档”的闭环路径。参数下发后的第二轮验证不可省略。</p>
+<div class="figure"><img src="diagrams/overview_flow.png" /><div class="caption">图 4-1 业务闭环流程图</div></div>
+<h3>4.2 功能模块说明</h3>
+<table>
+<tr><th>模块</th><th>主要职责</th><th>关键输出</th></tr>
+<tr><td>工位执行模块</td><td>承接操作员启动动作，显示测试进度、实时数据和最终判定。</td><td>当前任务状态、实时采样画面、Pass/Fail。</td></tr>
+<tr><td>配方管理模块</td><td>维护料号与测试配方，配置压力、温度、采样、容差和通道映射。</td><td>Recipe 主数据及版本记录。</td></tr>
+<tr><td>设备配置模块</td><td>维护设备型号、连接方式、协议类型和工位通道映射。</td><td>设备连接档案、驱动参数。</td></tr>
+<tr><td>流程与算法模块</td><td>执行状态机、采样、处理、拟合与 NG 判定。</td><td>ProcessResult、FitResult、CalibrationParameter。</td></tr>
+<tr><td>历史查询与报表模块</td><td>按 SN、料号、日期、结果查询历史任务并导出报表。</td><td>测试履历、报表文件索引。</td></tr>
+<tr><td>用户权限与审计模块</td><td>管理本地账号、角色、密码策略和审计日志。</td><td>用户档案、权限矩阵、AuditLog。</td></tr>
+</table>
+<h2>5 数据与报表总体设计</h2>
+<h3>5.1 数据分类</h3>
+<table>
+<tr><th>数据类别</th><th>示例</th><th>存储方式</th></tr>
+<tr><td>主数据</td><td>料号、配方、设备配置、角色权限</td><td>SQLite 结构化表</td></tr>
+<tr><td>过程数据</td><td>原始采样点、阶段状态、异常事件</td><td>SQLite 结构化表，必要时附带 CSV 缓存</td></tr>
+<tr><td>结果数据</td><td>处理结果、拟合结果、标定参数、最终结论</td><td>SQLite 结构化表</td></tr>
+<tr><td>文档数据</td><td>Excel、Word、模板文件</td><td>本地文件系统 + 数据库索引</td></tr>
+</table>
+<h3>5.2 报表策略</h3>
+<table>
+<tr><th>报表类型</th><th>内容重点</th><th>生成时机</th></tr>
+<tr><td>Excel 测试记录</td><td>原始采样、处理结果、拟合结果、异常明细、标定前后对比。</td><td>任务完成后自动生成，可手工复打。</td></tr>
+<tr><td>Word 测试报告</td><td>产品信息、关键指标、结论、追溯信息和签核区域。</td><td>任务判定完成后自动生成，可按模板升级。</td></tr>
+</table>
+<h2>6 部署与运行环境设计</h2>
+<h3>6.1 单机工位部署</h3>
+<p>首版软件部署在单台 Windows 工位 PC 上，通过串口、TCP 或 Modbus 等协议与现场设备通信。本机同时承担界面展示、流程执行、数据库存储和报表导出职责。</p>
+<div class="figure"><img src="diagrams/overview_deployment.png" /><div class="caption">图 6-1 单机工位部署图</div></div>
+<h3>6.2 运行环境要求</h3>
+<table>
+<tr><th>项目</th><th>要求</th></tr>
+<tr><td>操作系统</td><td>Windows 10/11 64 位。</td></tr>
+<tr><td>运行时</td><td>.NET 8 Windows Desktop Runtime。</td></tr>
+<tr><td>数据库</td><td>SQLite 文件，支持本地备份与恢复。</td></tr>
+<tr><td>目录结构</td><td>建议包含 Config、Data、Logs、Reports、Templates、Archive 等目录。</td></tr>
+<tr><td>外设接口</td><td>支持串口、以太网、USB 转串口等工业连接形态。</td></tr>
+</table>
+<h2>7 安全、权限与审计设计</h2>
+<h3>7.1 角色与权限边界</h3>
+<p>系统采用本地完整账号体系，权限不依赖操作系统账户。角色矩阵用于控制测试执行、配方维护、设备配置、审计查看和系统设置等功能入口。</p>
+<div class="figure"><img src="diagrams/overview_role.png" /><div class="caption">图 7-1 角色与权限关系图</div></div>
+<h3>7.2 安全设计要点</h3>
+<ul>
+<li>密码以哈希形式存储，不保存明文。</li>
+<li>关键动作必须写审计：登录、配方变更、设备配置修改、测试启动/中止、参数下发、报表导出。</li>
+<li>权限检查在 UI 层和应用层双重执行。</li>
+<li>异常、失败和人工终止均保留时间戳和操作人。</li>
+</ul>
+<h2>8 非功能设计</h2>
+<table>
+<tr><th>指标类别</th><th>设计要求</th></tr>
+<tr><td>易用性</td><td>主界面在单屏完成主要操作，状态、告警、进度和结果清晰可见。</td></tr>
+<tr><td>可靠性</td><td>通信失败、采样异常、拟合失败具备重试和可追溯日志。</td></tr>
+<tr><td>性能</td><td>500ms 默认采样频率下，界面更新和数据落库不阻塞流程执行。</td></tr>
+<tr><td>可维护性</td><td>分层明确，设备驱动与业务流程解耦，便于分模块并行开发。</td></tr>
+<tr><td>可扩展性</td><td>保留多工位、中心数据库、企业认证和非线性算法扩展点。</td></tr>
+</table>
+<h2>9 风险与分阶段实施建议</h2>
+<div class="risk">项目的主要风险集中在设备协议接入、现场异常建模、数据留痕完整性和工位操作稳定性。先把模拟器和流程骨架跑通，可以明显降低真实设备联调阶段的返工成本。</div>
+<table>
+<tr><th>阶段</th><th>重点工作</th><th>交付物</th></tr>
+<tr><td>阶段 1</td><td>搭建解决方案、分层骨架、账号权限、SQLite 与日志。</td><td>可启动的 WPF 壳、基础数据层和权限骨架。</td></tr>
+<tr><td>阶段 2</td><td>完成配方管理、测试状态机、模拟器与主界面。</td><td>模拟闭环可跑通的工位版本。</td></tr>
+<tr><td>阶段 3</td><td>接入数据处理、拟合、报表、历史查询、异常追溯。</td><td>可评审的业务完整版本。</td></tr>
+<tr><td>阶段 4</td><td>逐类接入真实设备驱动并完善联调。</td><td>面向现场试运行的实机版。</td></tr>
+</table>
+<p>本概要设计侧重说明“软件整体怎么设计、由哪些部分组成以及为什么这样设计”。类级实现细节、数据库字段和接口方法在《软件详细设计说明》中进一步展开。</p>
+</body>
+</html>

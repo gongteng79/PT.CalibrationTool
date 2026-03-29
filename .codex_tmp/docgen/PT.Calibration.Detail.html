@@ -1,0 +1,295 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>PT.Calibration 软件详细设计说明</title>
+<style>
+body { font-family: 'Microsoft YaHei UI'; font-size: 11pt; color: #1f2937; line-height: 1.65; margin: 1.6cm 1.8cm; }
+h1 { font-size: 28pt; text-align: center; margin: 0; }
+h2 { font-size: 18pt; color: #0f172a; margin-top: 22pt; border-bottom: 2px solid #cbd5e1; padding-bottom: 6px; }
+h3 { font-size: 14pt; color: #0f172a; margin-top: 16pt; }
+p { margin: 6pt 0; }
+ul { margin: 4pt 0 10pt 20pt; }
+li { margin: 2pt 0; }
+table { width: 100%; border-collapse: collapse; margin: 10pt 0 16pt 0; font-size: 10.5pt; }
+th, td { border: 1px solid #94a3b8; padding: 6px 8px; vertical-align: top; }
+th { background: #e2e8f0; }
+.cover { text-align: center; margin-top: 180pt; }
+.cover-subtitle { margin-top: 16pt; font-size: 14pt; color: #475569; }
+.cover-meta { margin-top: 70pt; font-size: 12pt; line-height: 2; }
+.toc { margin-top: 40pt; }
+.figure { text-align: center; margin: 12pt 0 20pt 0; }
+.figure img { width: 95%; max-width: 17cm; border: 1px solid #cbd5e1; }
+.caption { font-size: 10pt; color: #475569; margin-top: 6pt; }
+.note { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 8pt 10pt; margin: 10pt 0; }
+.break { page-break-after: always; }
+code { font-family: Consolas, monospace; font-size: 10pt; background: #f1f5f9; padding: 0 3px; }
+</style>
+</head>
+<body>
+<div class="cover">
+    <h1>PT.Calibration 软件详细设计说明</h1>
+    <div class="cover-subtitle">用于指导 .NET 8 / WPF 首版直接编码实现</div>
+    <div class="cover-meta">
+        <div>项目名称：PT.Calibration</div>
+        <div>解决方案：PT.Calibration.sln</div>
+        <div>版本：V1.0</div>
+        <div>日期：2026-03-29</div>
+    </div>
+</div>
+<div class="break"></div>
+<h2>目录</h2>
+<div class="toc">
+<p>1 引言</p><p>2 开发技术基线与解决方案结构</p><p>3 项目分层与项目职责</p><p>4 领域模型设计</p><p>5 页面与交互设计</p><p>6 流程状态机设计</p><p>7 设备抽象与适配器设计</p><p>8 持久化设计</p><p>9 账号、权限与审计设计</p><p>10 报表设计</p><p>11 日志、异常与告警设计</p><p>12 模拟器设计</p><p>13 测试与验收设计</p>
+</div>
+<div class="break"></div>
+<h2>1 引言</h2>
+<h3>1.1 编写目的</h3>
+<p>本文档在概要设计基础上继续下钻，给出 <code>PT.Calibration</code> 首版直接可开发的模块边界、接口契约、数据模型、页面方案、状态流转、异常规则和测试方案，作为编码实现与评审验收的依据。</p>
+<h3>1.2 设计边界</h3>
+<ul>
+<li>首版聚焦单机工位、一次 1 个 DUT、手工选配方并录入或扫描 SN 的操作模式。</li>
+<li>设备通信先设计到“抽象层 + 适配框架 + 重试策略”级别，不在本文写具体厂家协议帧。</li>
+<li>数据库以 SQLite 为准，所有结构化记录通过 EF Core 8 维护。</li>
+</ul>
+<h2>2 开发技术基线与解决方案结构</h2>
+<h3>2.1 技术基线</h3>
+<table>
+<tr><th>类别</th><th>选型</th><th>说明</th></tr>
+<tr><td>框架</td><td>.NET 8 + WPF</td><td>桌面客户端技术基线。</td></tr>
+<tr><td>架构模式</td><td>MVVM + Host + DI</td><td>统一 ViewModel 生命周期、配置和日志。</td></tr>
+<tr><td>数据访问</td><td>EF Core 8 + SQLite</td><td>本地结构化存储，支持迁移和查询。</td></tr>
+<tr><td>日志</td><td>Serilog</td><td>分文件记录运行、设备、异常和审计日志。</td></tr>
+<tr><td>报表</td><td>ClosedXML + Open XML SDK</td><td>生成 Excel 和 Word，不依赖 Office。</td></tr>
+<tr><td>UI 工具</td><td>CommunityToolkit.Mvvm</td><td>简化属性通知、命令和消息机制。</td></tr>
+</table>
+<h3>2.2 解决方案结构</h3>
+<table>
+<tr><th>项目</th><th>类型</th><th>职责</th></tr>
+<tr><td>PT.Calibration</td><td>WPF</td><td>应用启动、Shell、页面、ViewModel、导航和交互层。</td></tr>
+<tr><td>PT.Calibration.Application</td><td>Class Library</td><td>用例服务、流程编排、权限校验、报表调度、应用级 DTO。</td></tr>
+<tr><td>PT.Calibration.Domain</td><td>Class Library</td><td>实体、值对象、枚举、状态机、接口和领域规则。</td></tr>
+<tr><td>PT.Calibration.Infrastructure</td><td>Class Library</td><td>EF Core、SQLite、驱动适配器、文件存储、哈希、日志实现。</td></tr>
+<tr><td>PT.Calibration.Simulator</td><td>Class Library</td><td>压力、温箱、采样、通信异常和泄漏等模拟实现。</td></tr>
+<tr><td>PT.Calibration.Tests</td><td>Test Project</td><td>单元测试、集成测试、流程验收测试。</td></tr>
+</table>
+<h2>3 项目分层与项目职责</h2>
+<p>依赖必须沿“WPF → Application → Domain ← Infrastructure / Simulator”方向流动。UI 不得直接引用 EF Core 上下文或设备驱动实现，所有外部交互必须通过服务接口进入应用层。</p>
+<table>
+<tr><th>层</th><th>必须实现</th><th>禁止实现</th></tr>
+<tr><td>UI</td><td>页面、ViewModel、导航、输入校验、实时展示、权限可见性控制。</td><td>设备协议拼装、SQL 拼接、业务判定。</td></tr>
+<tr><td>Application</td><td>测试任务编排、命令处理、异常翻译、权限检查、报表导出入口。</td><td>数据库物理访问细节、页面控件逻辑。</td></tr>
+<tr><td>Domain</td><td>实体、状态、规则、接口、异常、算法契约。</td><td>日志框架、文件系统和第三方 UI 框架依赖。</td></tr>
+<tr><td>Infrastructure</td><td>仓储、设备适配器、导出器、哈希、持久化与日志。</td><td>硬编码业务流程和 UI 依赖。</td></tr>
+</table>
+<h2>4 领域模型设计</h2>
+<h3>4.1 核心实体关系</h3>
+<p>核心数据对象围绕 <code>Recipe</code>、<code>TestRun</code> 和过程记录展开，既要覆盖主数据，也要完整保存采样、处理、拟合和下发结果。</p>
+<div class="figure"><img src="diagrams/detail_entity_relation.png" /><div class="caption">图 4-1 核心数据实体关系图</div></div>
+<h3>4.2 关键实体定义</h3>
+<table>
+<tr><th>实体</th><th>关键字段</th><th>用途说明</th></tr>
+<tr><td>Recipe</td><td>RecipeId、PartNo、Version、PressureRange、WaitSeconds、SampleFrequencyMs、FitThresholdR2</td><td>定义测试参数，是启动任务前的唯一模板来源。</td></tr>
+<tr><td>TestRun</td><td>TestRunId、SerialNumber、PartNo、OperatorId、StartTime、EndTime、Status、FinalResult</td><td>代表一次完整标定任务，承载全流程生命周期。</td></tr>
+<tr><td>SampleRecord</td><td>Stage、PointIndex、Timestamp、SetPressure、ActualPressure、AnalogValue、Switch1、Switch2、Temperature</td><td>保存原始采样点，用于处理、追溯和 CSV/Excel 输出。</td></tr>
+<tr><td>ProcessResult</td><td>AvgPressure、ActionPoint、ResetPoint、Hysteresis、ErrorPercentFs、ValidRatio</td><td>保存每轮处理后的核心计算结果。</td></tr>
+<tr><td>FitResult</td><td>SlopeA、InterceptB、R2、RetryCount、IsAccepted</td><td>保存最小二乘拟合结果和重试信息。</td></tr>
+<tr><td>CalibrationParameter</td><td>ParameterSet、DownloadStatus、VerifiedAt</td><td>保存待下发和已生效的标定参数。</td></tr>
+<tr><td>User / Role</td><td>LoginName、PasswordHash、RoleCode</td><td>实现本地登录、权限矩阵和审计归属。</td></tr>
+<tr><td>AuditLog</td><td>ActionType、TargetType、BeforeJson、AfterJson、CreatedAt</td><td>记录关键动作及前后变更。</td></tr>
+</table>
+<h3>4.3 配方模型字段分组</h3>
+<table>
+<tr><th>字段组</th><th>字段示例</th><th>设计说明</th></tr>
+<tr><td>基本信息</td><td>PartNo、Name、Version、Description、IsEnabled</td><td>支持按料号管理，内部保留版本号用于追溯。</td></tr>
+<tr><td>压力参数</td><td>RangeMin、RangeMax、StepPercentFs、LeakThreshold、StabilizeTolerance</td><td>定义压力控制和稳定判断边界。</td></tr>
+<tr><td>采样参数</td><td>WaitSeconds、SampleDurationSeconds、SampleFrequencyMs、InvalidDataThreshold</td><td>控制采样节奏与无效数据判定。</td></tr>
+<tr><td>温度参数</td><td>TemperaturePoints、TemperatureTolerance、StableSeconds</td><td>定义温箱目标点和稳定策略。</td></tr>
+<tr><td>判定参数</td><td>FitThresholdR2、ErrorTolerancePercentFs、RetryLimit</td><td>定义拟合通过与 NG 判定规则。</td></tr>
+<tr><td>通道映射</td><td>PowerChannel、AnalogChannel、Switch1Channel、Switch2Channel、SerialChannel</td><td>绑定切换矩阵和 DUT 通道。</td></tr>
+</table>
+<h2>5 页面与交互设计</h2>
+<h3>5.1 页面导航结构</h3>
+<p>页面导航采用单 Shell 承载多业务页的方式，登录成功后进入主框架，根据权限决定菜单可见性和操作可用性。</p>
+<div class="figure"><img src="diagrams/detail_navigation.png" /><div class="caption">图 5-1 页面导航图</div></div>
+<h3>5.2 页面清单</h3>
+<table>
+<tr><th>页面</th><th>主要用户</th><th>核心区域</th><th>关键动作</th></tr>
+<tr><td>登录页</td><td>全部</td><td>账号、密码、登录结果、版本信息</td><td>登录、退出、锁定提示</td></tr>
+<tr><td>工位主界面</td><td>Operator / Engineer</td><td>配方选择、SN 输入、设备状态、实时数据、流程进度、告警、结论</td><td>启动、停止、确认告警、导出当前报表</td></tr>
+<tr><td>配方管理</td><td>Engineer / Admin</td><td>料号列表、配方编辑、版本启停、参数表单</td><td>新增、复制、编辑、启用、停用</td></tr>
+<tr><td>设备配置</td><td>Engineer / Admin</td><td>设备档案、连接参数、通道映射、协议类型</td><td>保存、测试连接、切换模拟器</td></tr>
+<tr><td>历史查询 / 报表中心</td><td>全部（受权限控制）</td><td>筛选条件、任务列表、详情抽屉、报表列表</td><td>查看、复打、导出</td></tr>
+<tr><td>用户 / 角色 / 审计</td><td>Admin</td><td>用户表、角色矩阵、审计筛选</td><td>新增用户、改密、授权、查看审计</td></tr>
+<tr><td>诊断页 / 模拟器面板</td><td>Engineer / Admin</td><td>设备通信日志、模拟器场景开关、连接自检</td><td>模拟故障、查看报文摘要、清理缓存</td></tr>
+</table>
+<div class="note">主界面禁止承载深层配置编辑。工程类配置通过独立页面进入，避免操作员误触。</div>
+<h2>6 流程状态机设计</h2>
+<h3>6.1 启动与登录流程</h3>
+<div class="figure"><img src="diagrams/detail_login_flow.png" /><div class="caption">图 6-1 启动/登录流程图</div></div>
+<p>客户端启动时先完成基础环境装配，只有配置、日志和数据库均可用时才允许进入登录页。登录失败需累计失败次数并支持锁定策略。</p>
+<h3>6.2 标定闭环流程</h3>
+<div class="figure"><img src="diagrams/overview_flow.png" /><div class="caption">图 6-2 标定闭环流程图</div></div>
+<p>闭环流程是整个系统的主业务脊柱，应用层流程引擎必须完整实现其中每一步，并以状态机驱动而非页面按钮串行调用。</p>
+<h3>6.3 测试状态机</h3>
+<div class="figure"><img src="diagrams/detail_state_machine.png" /><div class="caption">图 6-3 测试状态机图</div></div>
+<h3>6.4 状态定义</h3>
+<table>
+<tr><th>状态</th><th>进入条件</th><th>退出条件</th><th>失败转移</th></tr>
+<tr><td>Idle</td><td>应用已登录，无进行中任务</td><td>操作员启动任务</td><td>-</td></tr>
+<tr><td>Configuring</td><td>收到启动命令</td><td>配方与设备快照生成成功</td><td>配置非法 → Failed</td></tr>
+<tr><td>SettingTemperature</td><td>温度点已确定</td><td>温箱达到稳定要求</td><td>超时 / 通信失败 → Failed</td></tr>
+<tr><td>ControllingPressure</td><td>进入当前压力点</td><td>达到稳定窗口</td><td>泄漏 / 超差 / 设备异常 → Failed</td></tr>
+<tr><td>CollectingBaseline</td><td>首轮压力稳定</td><td>采样时长完成并保存成功</td><td>无效数据超阈值 → Failed</td></tr>
+<tr><td>ProcessingBaseline</td><td>首轮采样完成</td><td>处理结果生成</td><td>计算异常 → Failed</td></tr>
+<tr><td>Fitting</td><td>首轮处理完成</td><td>R² 与参数合法性满足条件</td><td>重试 3 次仍失败 → Failed</td></tr>
+<tr><td>DownloadingParameters</td><td>拟合通过</td><td>参数下发并确认成功</td><td>下发失败 3 次 → Failed</td></tr>
+<tr><td>CollectingVerification</td><td>参数已生效</td><td>二轮采样完成</td><td>采样失败 → Failed</td></tr>
+<tr><td>ProcessingVerification</td><td>二轮采样完成</td><td>验证结果生成</td><td>超差 → Completed(NG)</td></tr>
+<tr><td>Completed</td><td>流程结束</td><td>报表生成并归档完成</td><td>-</td></tr>
+<tr><td>Failed / Aborted</td><td>出现异常或人工终止</td><td>记录完成并回到 Idle</td><td>-</td></tr>
+</table>
+<h2>7 设备抽象与适配器设计</h2>
+<h3>7.1 设备接口总览</h3>
+<table>
+<tr><th>接口</th><th>核心职责</th><th>建议操作</th></tr>
+<tr><td><code>IDeviceDriverFactory</code></td><td>按设备类型和配置创建驱动实例</td><td>CreatePressureController、CreateMultimeter、CreateSwitchMatrix、CreateChamber</td></tr>
+<tr><td><code>IPressureController</code></td><td>压力设定、读取实际压力、停止输出</td><td>SetTargetPressureAsync、ReadPressureAsync、VentAsync、StopAsync</td></tr>
+<tr><td><code>IMultimeter</code></td><td>读取模拟量和开关量</td><td>ReadAnalogAsync、ReadSwitchAsync、ZeroAsync</td></tr>
+<tr><td><code>ISwitchMatrix</code></td><td>控制电源、模拟量、开关量、串口通道</td><td>ApplyChannelMapAsync、OpenChannelAsync、CloseAllAsync</td></tr>
+<tr><td><code>ITemperatureChamber</code></td><td>温度设定、读取和稳定等待</td><td>SetTargetTemperatureAsync、ReadTemperatureAsync、WaitStableAsync</td></tr>
+<tr><td><code>IDutParameterChannel</code></td><td>下发拟合后的标定参数并验证生效</td><td>DownloadParametersAsync、VerifyParametersAsync</td></tr>
+<tr><td><code>ITestWorkflowEngine</code></td><td>编排完整状态机流程</td><td>PrepareAsync、ExecuteAsync、AbortAsync、GetSnapshotAsync</td></tr>
+<tr><td><code>ITestSessionService</code></td><td>创建、查询和恢复任务上下文</td><td>CreateRunAsync、LoadRunAsync、CompleteRunAsync</td></tr>
+<tr><td><code>IRecipeService</code></td><td>提供配方读写、启停、复制与校验</td><td>ListAsync、SaveAsync、ValidateAsync、CloneAsync</td></tr>
+<tr><td><code>IReportService</code></td><td>生成 Excel 与 Word 报表</td><td>BuildExcelAsync、BuildWordAsync、ArchiveAsync</td></tr>
+<tr><td><code>IAuthService</code></td><td>登录、改密、角色装载</td><td>LoginAsync、ChangePasswordAsync、GetPermissionSetAsync</td></tr>
+<tr><td><code>IAuditService</code></td><td>记录审计日志</td><td>WriteAsync、QueryAsync</td></tr>
+</table>
+<h3>7.2 设备适配框架</h3>
+<ul>
+<li>连接配置：串口参数、TCP 地址、超时、重试次数、站号等。</li>
+<li>驱动实现：封装连接、发送、应答、超时和异常翻译。</li>
+<li>工厂层：按设备类型与运行模式（真实 / 模拟）返回对应实现。</li>
+</ul>
+<h3>7.3 关键交互时序</h3>
+<div class="figure"><img src="diagrams/detail_sequence.png" /><div class="caption">图 7-1 关键设备交互时序图</div></div>
+<p>时序图强调：WPF 界面不直接驱动设备，所有设备交互均由流程引擎发起，并通过仓储和报表服务形成可回放结果。</p>
+<h3>7.4 通信与重试策略</h3>
+<table>
+<tr><th>场景</th><th>策略</th></tr>
+<tr><td>连接建立失败</td><td>按设备配置重试 3 次，仍失败则中止当前任务并记录异常。</td></tr>
+<tr><td>命令超时</td><td>单次命令超时按设备类别配置，默认 3 秒；超时后重试并写设备日志。</td></tr>
+<tr><td>压力稳定失败</td><td>在等待时间内持续监测实际压力，若偏差超限或出现泄漏则直接转 Failed。</td></tr>
+<tr><td>参数下发失败</td><td>自动重试 3 次；每次失败都保存错误码、设备状态和参数快照。</td></tr>
+</table>
+<h2>8 持久化设计</h2>
+<h3>8.1 数据库设计原则</h3>
+<ul>
+<li>主数据、过程数据、结果数据和安全数据分表存储，避免单表膨胀。</li>
+<li>同一任务从原始采样到最终报表必须通过 <code>TestRunId</code> 贯穿。</li>
+<li>历史结果默认不可物理删除，仅允许逻辑归档。</li>
+</ul>
+<h3>8.2 核心表设计</h3>
+<table>
+<tr><th>表名</th><th>主键</th><th>核心字段</th><th>说明</th></tr>
+<tr><td>Users</td><td>UserId</td><td>LoginName、DisplayName、PasswordHash、Status</td><td>本地账号。</td></tr>
+<tr><td>Roles</td><td>RoleId</td><td>RoleCode、RoleName</td><td>角色定义。</td></tr>
+<tr><td>UserRoles</td><td>UserRoleId</td><td>UserId、RoleId</td><td>用户与角色关系。</td></tr>
+<tr><td>Recipes</td><td>RecipeId</td><td>PartNo、Version、PressureRange、SampleFrequencyMs、RetryLimit</td><td>配方主表。</td></tr>
+<tr><td>RecipeTemperaturePoints</td><td>RecipeTemperaturePointId</td><td>RecipeId、TemperatureSetPoint、OrderNo</td><td>温度点子表。</td></tr>
+<tr><td>DeviceProfiles</td><td>DeviceProfileId</td><td>ProtocolType、ConnectionProfile、ChannelBindingsJson</td><td>设备配置。</td></tr>
+<tr><td>TestRuns</td><td>TestRunId</td><td>SerialNumber、RecipeId、OperatorId、Status、FinalResult</td><td>任务主表。</td></tr>
+<tr><td>TestRunStages</td><td>TestRunStageId</td><td>TestRunId、StateCode、StartedAt、EndedAt、ErrorCode</td><td>阶段追踪。</td></tr>
+<tr><td>SampleRecords</td><td>SampleRecordId</td><td>TestRunId、Stage、Timestamp、ActualPressure、AnalogValue</td><td>原始采样表。</td></tr>
+<tr><td>ProcessResults</td><td>ProcessResultId</td><td>TestRunId、Stage、ActionPoint、Hysteresis、ErrorPercentFs</td><td>处理结果表。</td></tr>
+<tr><td>FitResults</td><td>FitResultId</td><td>TestRunId、SlopeA、InterceptB、R2、RetryCount</td><td>拟合结果表。</td></tr>
+<tr><td>CalibrationParameters</td><td>CalibrationParameterId</td><td>TestRunId、ParameterSetJson、DownloadStatus</td><td>下发参数表。</td></tr>
+<tr><td>ReportFiles</td><td>ReportFileId</td><td>TestRunId、FileType、FilePath、CreatedAt</td><td>报表索引。</td></tr>
+<tr><td>AuditLogs</td><td>AuditLogId</td><td>UserId、ActionType、TargetType、BeforeJson、AfterJson</td><td>审计记录。</td></tr>
+<tr><td>AlarmEvents</td><td>AlarmEventId</td><td>TestRunId、Level、Code、Message、OccurredAt</td><td>异常与告警。</td></tr>
+</table>
+<h2>9 账号、权限与审计设计</h2>
+<p>登录成功后，由 <code>IAuthService</code> 返回当前用户与权限集合，Shell 根据权限集合控制菜单可见性；应用层在执行敏感命令前再次校验权限。</p>
+<table>
+<tr><th>功能</th><th>Operator</th><th>Engineer</th><th>Admin</th></tr>
+<tr><td>启动 / 中止测试</td><td>Y</td><td>Y</td><td>Y</td></tr>
+<tr><td>查看历史结果</td><td>Y</td><td>Y</td><td>Y</td></tr>
+<tr><td>导出当前报表</td><td>Y</td><td>Y</td><td>Y</td></tr>
+<tr><td>配方新增 / 编辑 / 启停</td><td>N</td><td>Y</td><td>Y</td></tr>
+<tr><td>设备配置 / 模拟器</td><td>N</td><td>Y</td><td>Y</td></tr>
+<tr><td>用户与角色管理</td><td>N</td><td>N</td><td>Y</td></tr>
+<tr><td>审计查看</td><td>N</td><td>Y（只读）</td><td>Y</td></tr>
+</table>
+<h2>10 报表设计</h2>
+<h3>10.1 报表生成流程</h3>
+<div class="figure"><img src="diagrams/detail_report_flow.png" /><div class="caption">图 10-1 报表生成流程图</div></div>
+<h3>10.2 Excel 结构建议</h3>
+<table>
+<tr><th>Sheet</th><th>内容</th></tr>
+<tr><td>Summary</td><td>产品信息、料号、SN、结论、关键指标。</td></tr>
+<tr><td>BaselineRaw</td><td>首轮原始采样。</td></tr>
+<tr><td>VerificationRaw</td><td>二轮原始采样。</td></tr>
+<tr><td>ProcessResult</td><td>处理结果、动作点、回差、误差。</td></tr>
+<tr><td>FitResult</td><td>斜率、截距、R²、重试次数、参数快照。</td></tr>
+<tr><td>Alarm</td><td>异常、重试、人工中止明细。</td></tr>
+</table>
+<h3>10.3 Word 报告结构建议</h3>
+<ul>
+<li>封面：项目名、料号、SN、测试日期、操作员、结论。</li>
+<li>设备与环境：设备清单、温度点、压力范围、配方版本。</li>
+<li>结果摘要：动作点、回差、误差、拟合优度、标定参数。</li>
+<li>附录：异常摘要、追溯编号、文件索引。</li>
+</ul>
+<h2>11 日志、异常与告警设计</h2>
+<table>
+<tr><th>日志类型</th><th>示例内容</th><th>建议存放</th></tr>
+<tr><td>应用日志</td><td>启动、导航、任务生命周期</td><td>Logs/application-yyyyMMdd.log</td></tr>
+<tr><td>设备日志</td><td>连接、发送、应答、超时、重试</td><td>Logs/device-yyyyMMdd.log</td></tr>
+<tr><td>告警日志</td><td>泄漏、超差、采样失败、拟合失败</td><td>Logs/alarm-yyyyMMdd.log</td></tr>
+<tr><td>审计日志</td><td>登录、配置修改、导出报表</td><td>SQLite + 可选文本镜像</td></tr>
+</table>
+<table>
+<tr><th>异常类别</th><th>触发示例</th><th>处理方式</th></tr>
+<tr><td>配置异常</td><td>压力范围非法、步长越界、通道重复</td><td>启动前阻断并提示。</td></tr>
+<tr><td>通信异常</td><td>连接失败、超时、丢响应</td><td>按设备策略重试后失败则中止。</td></tr>
+<tr><td>过程异常</td><td>压力泄漏、温箱不稳定、无效数据比例超阈值</td><td>记录 AlarmEvent 并中止当前任务。</td></tr>
+<tr><td>算法异常</td><td>拟合不收敛、R² 不达标、参数越界</td><td>自动重试；超过上限后判 Failed。</td></tr>
+<tr><td>导出异常</td><td>文件被占用、模板缺失</td><td>提示重试并记录，不影响原始结果。</td></tr>
+</table>
+<ul>
+<li>配方校验失败，不允许进入任务执行。</li>
+<li>任一设备自检失败，不允许启动任务。</li>
+<li>无效数据比例超过 10%，任务判失败。</li>
+<li>拟合优度 R² 小于阈值且连续 3 次重试仍不通过，任务判失败。</li>
+<li>参数下发 3 次失败，任务判失败。</li>
+<li>二轮验证超出允许误差范围，任务结束但最终结果判 NG。</li>
+</ul>
+<h2>12 模拟器设计</h2>
+<p>模拟器用于在没有实机或协议未完成时提前验证流程、页面、数据和报表链路，减少联调阶段的不确定性。</p>
+<table>
+<tr><th>场景</th><th>行为</th><th>用途</th></tr>
+<tr><td>正常场景</td><td>按配方稳定输出压力、温度和采样值</td><td>跑通主流程与报表。</td></tr>
+<tr><td>压力泄漏</td><td>稳定阶段持续偏离设定值</td><td>验证泄漏检测与中止逻辑。</td></tr>
+<tr><td>通信超时</td><td>随机丢弃或延迟响应</td><td>验证重试与日志。</td></tr>
+<tr><td>拟合失败</td><td>返回不连续采样导致 R² 降低</td><td>验证自动重试与最终失败。</td></tr>
+<tr><td>下发失败</td><td>返回写入失败或校验失败</td><td>验证下载重试和异常落库。</td></tr>
+<tr><td>验证超差</td><td>二轮数据偏离容差范围</td><td>验证 NG 结论与报表呈现。</td></tr>
+</table>
+<h2>13 测试与验收设计</h2>
+<ul>
+<li>单元测试：配方合法性校验、状态机转移和重试上限、最小二乘拟合与 R² 计算、权限校验和审计写入。</li>
+<li>集成测试：SQLite 建库迁移、模拟器下完整跑通首轮 + 拟合 + 下发 + 二轮验证、Excel/Word 导出。</li>
+<li>验收场景：正常闭环、拟合失败重试、参数下发失败、二轮验证超差、人工终止。</li>
+</ul>
+<table>
+<tr><th>场景</th><th>预期</th></tr>
+<tr><td>正常闭环</td><td>任务完成、结果为 Pass、Excel/Word 自动生成。</td></tr>
+<tr><td>拟合失败重试</td><td>自动重试 3 次，失败后任务结束为 Failed。</td></tr>
+<tr><td>参数下发失败</td><td>记录失败明细并提示人工处理。</td></tr>
+<tr><td>二轮验证超差</td><td>任务完成但最终结果为 NG，报表保留前后对比。</td></tr>
+<tr><td>人工终止</td><td>状态转为 Aborted，已采集数据仍可查询。</td></tr>
+</table>
+<p>本详细设计已经覆盖页面、模块、接口、状态、数据、异常和测试点，可直接作为首版开发的编码依据。</p>
+</body>
+</html>
